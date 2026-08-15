@@ -3,13 +3,15 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 
 const TABS = [
-  { key: "mailboxes", label: "Mailboxes", icon: Inbox, testid: "nav-mailboxes-tab" },
-  { key: "assignments", label: "Assignments", icon: ListChecks, testid: "nav-assignments-tab" },
-  { key: "search", label: "Code Search", icon: Search, testid: "nav-code-search-tab" },
+  { key: "mailboxes", label: "Mailboxes", icon: Inbox, testid: "nav-mailboxes-tab", adminOnly: true },
+  { key: "assignments", label: "Assignments", icon: ListChecks, testid: "nav-assignments-tab", adminOnly: true },
+  { key: "search", label: "Code Search", icon: Search, testid: "nav-code-search-tab", adminOnly: false },
 ];
 
 export default function Navbar({ active, onChange, msConfigured }) {
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);
 
   return (
     <header
@@ -27,7 +29,7 @@ export default function Navbar({ active, onChange, msConfigured }) {
             </span>
           </div>
           <nav className="flex items-center gap-1">
-            {TABS.map((t) => {
+            {visibleTabs.map((t) => {
               const Icon = t.icon;
               const isActive = active === t.key;
               return (
@@ -60,7 +62,16 @@ export default function Navbar({ active, onChange, msConfigured }) {
             <span className={`h-1.5 w-1.5 rounded-full ${msConfigured ? "bg-sky-400" : "bg-amber-400"}`} />
             {msConfigured ? "Microsoft OAuth ready" : "Microsoft not configured"}
           </span>
-          <span className="text-xs text-slate-500 hidden lg:block">{user?.email}</span>
+          <span className="text-xs text-slate-500 hidden lg:block">
+            {user?.email}
+            {user?.role && (
+              <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide border ${
+                isAdmin ? "border-emerald-500/30 text-emerald-400" : "border-slate-500/30 text-slate-400"
+              }`}>
+                {user.role}
+              </span>
+            )}
+          </span>
           <Button
             data-testid="admin-logout-button"
             onClick={logout}
