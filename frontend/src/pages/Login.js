@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ShieldCheck, Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -88,6 +88,12 @@ export default function Login() {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
             </Button>
           </form>
+          <p className="text-center text-sm text-slate-500 mt-6">
+            Don't have an account?{" "}
+            <Link to="/register" className="text-[#E50914] hover:underline font-medium">
+              Create one
+            </Link>
+          </p>
         </div>
         <p className="text-center text-xs text-slate-600 mt-6">
           Read-only mailbox access · Encrypted tokens at rest
@@ -96,3 +102,4 @@ export default function Login() {
     </div>
   );
 }
+
