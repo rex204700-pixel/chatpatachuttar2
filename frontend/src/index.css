@@ -64,14 +64,115 @@ body {
 }
 
 .h24-card {
-    background: #10131A;
+    position: relative;
+    background: linear-gradient(180deg, #12151D 0%, #0D0F15 100%);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 1rem;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+    overflow: hidden;
+}
+
+.h24-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(229, 9, 20, 0.5), transparent);
+    opacity: 0;
+    transition: opacity 0.25s ease;
 }
 
 .h24-card:hover {
     border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 8px 30px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    transform: translateY(-1px);
+}
+
+.h24-card:hover::before {
+    opacity: 1;
+}
+
+/* Signature: live signal indicator, used for anything actively "on air" */
+.live-dot {
+    position: relative;
+    display: inline-block;
+    height: 7px;
+    width: 7px;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: currentColor;
+    animation: livePulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes livePulse {
+    0% { transform: scale(1); opacity: 0.7; }
+    70% { transform: scale(2.8); opacity: 0; }
+    100% { transform: scale(2.8); opacity: 0; }
+}
+
+/* Signature: broadcast frequency line — thin animated gradient sweep */
+.signal-line {
+    position: relative;
+    height: 2px;
+    width: 100%;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.signal-line::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    background: linear-gradient(90deg, transparent, #E50914, transparent);
+    animation: sweep 3.2s ease-in-out infinite;
+}
+
+@keyframes sweep {
+    0% { left: -30%; }
+    50% { left: 60%; }
+    100% { left: -30%; }
+}
+
+.text-gradient {
+    background: linear-gradient(135deg, #ffffff 0%, #ffffff 55%, #ff5a63 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.75);
+}
+
+.meter-card {
+    position: relative;
+    background: linear-gradient(180deg, #12151D 0%, #0D0F15 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.875rem;
+    overflow: hidden;
+}
+
+.meter-card .meter-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
 }
 
 .grain {
