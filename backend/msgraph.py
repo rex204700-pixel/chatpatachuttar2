@@ -36,6 +36,7 @@ def build_auth_flow(state: str) -> dict:
         scopes=SCOPES,
         redirect_uri=os.environ["MS_REDIRECT_URI"],
         state=state,
+        prompt="select_account",
     )
 
 
