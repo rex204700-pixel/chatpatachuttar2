@@ -32,13 +32,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const register = async (name, email, password) => {
+    const { data } = await api.post("/auth/register", { name, email, password });
+    localStorage.setItem("h24_token", data.access_token);
+    setUser(data.user);
+    return data.user;
+  };
+
   const logout = () => {
     localStorage.removeItem("h24_token");
     setUser(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
