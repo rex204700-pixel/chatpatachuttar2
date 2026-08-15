@@ -206,6 +206,11 @@ async def oauth_callback(request: Request):
         return RedirectResponse(f"{frontend}/?error=token_exchange_failed")
 
     if "access_token" not in result:
+        logger.error(
+            "Token exchange returned no access_token. error=%s error_description=%s",
+            result.get("error"),
+            result.get("error_description"),
+        )
         return RedirectResponse(f"{frontend}/?error=token_exchange_failed")
     refresh = result.get("refresh_token")
     if not refresh:
