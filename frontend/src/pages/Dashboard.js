@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 import MailboxesTab from "@/components/MailboxesTab";
 import AssignmentsTab from "@/components/AssignmentsTab";
@@ -15,7 +16,9 @@ const ERROR_MESSAGES = {
 };
 
 export default function Dashboard() {
-  const [active, setActive] = useState("mailboxes");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const [active, setActive] = useState(isAdmin ? "mailboxes" : "search");
   const [status, setStatus] = useState({ microsoft_configured: false, gmail_configured: false });
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
