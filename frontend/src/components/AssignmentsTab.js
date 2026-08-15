@@ -25,6 +25,7 @@ function ProviderBadge({ provider }) {
 
 export default function AssignmentsTab({ onChanged }) {
   const [rows, setRows] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [provider, setProvider] = useState("outlook_graph");
@@ -34,8 +35,12 @@ export default function AssignmentsTab({ onChanged }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/assignments");
-      setRows(data);
+      const [assignmentsRes, usersRes] = await Promise.all([
+        api.get("/assignments"),
+        api.get("/users"),
+      ]);
+      setRows(assignmentsRes.data);
+      setUsers(usersRes.data);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
@@ -67,6 +72,17 @@ export default function AssignmentsTab({ onChanged }) {
   const changeProvider = async (id, newProvider) => {
     try {
       await api.patch(`/assignments/${id}`, { provider: newProvider });
+      await load();
+      onChanged?.();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const assignToUser = async (id, userId) => {
+    try {
+      await api.patch(`/assignments/${id}/assign`, { user_id: userId || null });
+      toast.success(userId ? "Email assigned" : "Email unassigned");
       await load();
       onChanged?.();
     } catch (err) {
@@ -157,6 +173,7 @@ export default function AssignmentsTab({ onChanged }) {
               <tr className="text-left text-slate-500 text-xs uppercase tracking-wide border-b border-white/10">
                 <th className="px-5 py-3 font-medium">Email</th>
                 <th className="px-5 py-3 font-medium">Provider</th>
+                <th className="px-5 py-3 font-medium">Assigned to</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium text-right">Actions</th>
               </tr>
@@ -176,6 +193,27 @@ export default function AssignmentsTab({ onChanged }) {
                       <SelectContent>
                         <SelectItem value="outlook_graph">Outlook (Graph)</SelectItem>
                         <SelectItem value="gmail_imap">Gmail (IMAP)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <Select
+                      value={r.assigned_user_id || "unassigned"}
+                      onValueChange={(v) => assignToUser(r.id, v === "unassigned" ? null : v)}
+                    >
+                      <SelectTrigger
+                        data-testid={`assign-user-select-${r.email_norm}`}
+                        className="h-8 w-44 bg-black/30 border-white/10 text-xs text-slate-200"
+                      >
+                        <SelectValue placeholder="Unassigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Unassigned (admin only)</SelectItem>
+                        {users.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.name || u.email}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </td>
