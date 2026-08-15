@@ -21,6 +21,7 @@ from auth_utils import (
     verify_password,
     create_access_token,
     get_current_admin,
+    get_current_user,
 )
 import msgraph
 from services.email_fetcher import (
@@ -53,14 +54,25 @@ class LoginReq(BaseModel):
     password: str
 
 
+class RegisterReq(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+
 class AssignmentCreate(BaseModel):
     email: EmailStr
     provider: str = "outlook_graph"
     label: str = ""
+    assigned_user_id: str | None = None
 
 
 class AssignmentUpdate(BaseModel):
     provider: str
+
+
+class AssignReq(BaseModel):
+    user_id: str | None = None
 
 
 class SearchReq(BaseModel):
@@ -82,14 +94,43 @@ async def login(body: LoginReq):
     }
 
 
+@api.post("/auth/register")
+async def register(body: RegisterReq):
+    email = normalize_email(body.email)
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+    user_id = str(uuid.uuid4())
+    await db.users.insert_one({
+        "id": user_id,
+        "email": email,
+        "name": body.name.strip() or email,
+        "password_hash": hash_password(body.password),
+        "role": "member",
+        "created_at": now_iso(),
+    })
+    token = create_access_token(user_id, email)
+    return {
+        "access_token": token,
+        "user": {"id": user_id, "email": email, "name": body.name.strip() or email, "role": "member"},
+    }
+
+
 @api.get("/auth/me")
-async def me(admin=Depends(get_current_admin)):
-    return admin
+async def me(user=Depends(get_current_user)):
+    return user
+
+
+# ---------- Users (admin only, for assigning emails) ----------
+@api.get("/users")
+async def list_users(admin=Depends(get_current_admin)):
+    docs = await db.users.find({"role": "member"}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    return docs
 
 
 # ---------- Config status ----------
 @api.get("/config/status")
-async def config_status(admin=Depends(get_current_admin)):
+async def config_status(user=Depends(get_current_user)):
     return {
         "microsoft_configured": msgraph.is_configured(),
         "gmail_configured": bool(os.environ.get("GMAIL_IMAP_USER") and os.environ.get("GMAIL_IMAP_PASSWORD")),
@@ -99,14 +140,15 @@ async def config_status(admin=Depends(get_current_admin)):
 
 
 @api.get("/categories")
-async def get_categories(admin=Depends(get_current_admin)):
+async def get_categories(user=Depends(get_current_user)):
     return categories_list()
 
 
 # ---------- Assignments ----------
 @api.get("/assignments")
-async def list_assignments(admin=Depends(get_current_admin)):
-    docs = await db.email_assignments.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+async def list_assignments(user=Depends(get_current_user)):
+    query = {} if user.get("role") == "admin" else {"assigned_user_id": user["id"]}
+    docs = await db.email_assignments.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     mailboxes = await db.mailbox_accounts.find({}, {"_id": 0, "ms_refresh_token_enc": 0}).to_list(500)
     mb_by_email = {m["email_norm"]: m for m in mailboxes}
     for d in docs:
@@ -124,11 +166,16 @@ async def create_assignment(body: AssignmentCreate, admin=Depends(get_current_ad
     existing = await db.email_assignments.find_one({"email_norm": email_norm})
     if existing:
         raise HTTPException(status_code=409, detail="Email already assigned")
+    if body.assigned_user_id:
+        target = await db.users.find_one({"id": body.assigned_user_id})
+        if not target:
+            raise HTTPException(status_code=404, detail="Assigned user not found")
     doc = {
         "id": str(uuid.uuid4()),
         "email_norm": email_norm,
         "provider": body.provider,
         "label": body.label or "",
+        "assigned_user_id": body.assigned_user_id,
         "created_at": now_iso(),
     }
     await db.email_assignments.insert_one(doc)
@@ -142,6 +189,20 @@ async def update_assignment(assignment_id: str, body: AssignmentUpdate, admin=De
         raise HTTPException(status_code=400, detail="Invalid provider")
     res = await db.email_assignments.update_one(
         {"id": assignment_id}, {"$set": {"provider": body.provider}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    return {"ok": True}
+
+
+@api.patch("/assignments/{assignment_id}/assign")
+async def assign_to_user(assignment_id: str, body: AssignReq, admin=Depends(get_current_admin)):
+    if body.user_id:
+        target = await db.users.find_one({"id": body.user_id})
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+    res = await db.email_assignments.update_one(
+        {"id": assignment_id}, {"$set": {"assigned_user_id": body.user_id}}
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Assignment not found")
@@ -251,13 +312,15 @@ async def disconnect_mailbox(email_norm: str, admin=Depends(get_current_admin)):
 
 # ---------- Search ----------
 @api.post("/search")
-async def search(body: SearchReq, admin=Depends(get_current_admin)):
+async def search(body: SearchReq, user=Depends(get_current_user)):
     email_norm = normalize_email(body.email_norm)
     if body.category not in CATEGORIES:
         raise HTTPException(status_code=400, detail="Unknown category")
     assignment = await db.email_assignments.find_one({"email_norm": email_norm})
     if not assignment:
         raise HTTPException(status_code=404, detail="No assignment for this email")
+    if user.get("role") != "admin" and assignment.get("assigned_user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="This email is not assigned to you")
 
     provider = assignment["provider"]
     mailbox = await db.mailbox_accounts.find_one({"email_norm": email_norm})
