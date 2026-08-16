@@ -128,6 +128,16 @@ export default function CodeSearchTab() {
         <div data-testid="parsed-result-card" className="h24-card p-8 fade-up border-emerald-500/20 shadow-[0_0_35px_rgba(16,185,129,0.08)]">
           <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium mb-5">
             <KeyRound className="h-4 w-4" /> Result found
+            {result.country && (
+              <span
+                data-testid="parsed-country-badge"
+                className="inline-flex items-center gap-1.5 text-xs text-slate-300 bg-white/5 border border-white/10 rounded-full px-2 py-0.5"
+                title={result.country.code ? `Region: ${result.country.code}` : "Region detected"}
+              >
+                {result.country.flag && <span className="text-sm leading-none">{result.country.flag}</span>}
+                {result.country.code && <span className="font-mono-code">{result.country.code}</span>}
+              </span>
+            )}
             <span className="ml-auto text-xs text-slate-500 font-normal">
               via {result.provider === "outlook_graph" ? "Microsoft Graph" : "Gmail IMAP"}
             </span>
@@ -158,19 +168,7 @@ export default function CodeSearchTab() {
 
           {result.link && (
             <div className="mb-5">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="text-xs text-slate-500 uppercase tracking-wide">Action link</div>
-                {result.country && (
-                  <span
-                    data-testid="parsed-country-badge"
-                    className="inline-flex items-center gap-1.5 text-xs text-slate-300 bg-white/5 border border-white/10 rounded-full px-2 py-0.5"
-                    title={result.country.code ? `Region: ${result.country.code}` : "Region detected"}
-                  >
-                    {result.country.flag && <span className="text-sm leading-none">{result.country.flag}</span>}
-                    {result.country.code && <span className="font-mono-code">{result.country.code}</span>}
-                  </span>
-                )}
-              </div>
+              <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">Action link</div>
               <a
                 data-testid="parsed-link-display"
                 href={result.link}
