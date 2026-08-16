@@ -1,6 +1,7 @@
 """Netflix code fetcher supporting Outlook (Microsoft Graph) and Gmail (IMAP) providers."""
 import os
 import re
+import html as html_lib
 import imaplib
 import email as email_lib
 from email.header import decode_header
@@ -123,8 +124,7 @@ def _html_to_text(html: str) -> str:
         return ""
     text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
     text = re.sub(r"(?s)<[^>]+>", " ", text)
-    text = re.sub(r"&nbsp;", " ", text)
-    text = re.sub(r"&amp;", "&", text)
+    text = html_lib.unescape(text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -138,6 +138,43 @@ _LINK_PRIORITY = {
     "household": ["household", "hogar", "foyer", "haushalt", "residen", "nucleo", "confirm", "update"],
 }
 _LINK_PRIORITY_FALLBACK = ["password", "household", "verify", "confirm", "travel", "getcode", "get-code", "update", "account/"]
+
+_FLAG_EMOJI_RE = re.compile("[\U0001F1E6-\U0001F1FF]{2}")
+_HTML_LANG_RE = re.compile(r'<html[^>]*\blang=["\']([a-zA-Z]{2})(?:[-_]([a-zA-Z]{2}))?["\']', re.IGNORECASE)
+
+# Fallback: infer a country from the language when no explicit region subtag
+# (e.g. "pt" -> Brazil is by far Netflix's largest pt-speaking market) is present.
+_LANG_TO_COUNTRY = {
+    "pt": "BR", "es": "ES", "en": "US", "fr": "FR", "de": "DE", "it": "IT",
+}
+
+
+def _country_flag_from_code(cc: str):
+    if not cc or len(cc) != 2 or not cc.isalpha():
+        return None
+    cc = cc.upper()
+    return "".join(chr(0x1F1E6 + (ord(c) - ord("A"))) for c in cc)
+
+
+def _detect_country(raw_html: str, text: str):
+    """Best-effort region detection for the footer of a Netflix email, used to
+    show a country flag alongside password-reset / household results. Looks for
+    a literal flag emoji Netflix already embeds, then falls back to the html
+    lang attribute Netflix sets per-region."""
+    for haystack in (raw_html, text):
+        if not haystack:
+            continue
+        m = _FLAG_EMOJI_RE.search(haystack)
+        if m:
+            return {"flag": m.group(0), "code": None}
+    if raw_html:
+        m = _HTML_LANG_RE.search(raw_html)
+        if m:
+            lang = m.group(1).lower()
+            region = (m.group(2) or _LANG_TO_COUNTRY.get(lang) or "").upper()
+            if region:
+                return {"flag": _country_flag_from_code(region), "code": region}
+    return None
 
 
 def parse_netflix_email(subject: str, body_text: str, body_html: str, extract_type: str = "code", category_key: str = None) -> dict:
@@ -153,7 +190,12 @@ def parse_netflix_email(subject: str, body_text: str, body_html: str, extract_ty
         if m:
             code = m.group(1)
     if extract_type == "link":
-        links = re.findall(r"https?://[^\s\"'<>]*netflix\.com[^\s\"'<>]*", (body_html or "") + " " + text)
+        # Decode HTML entities (Graph/IMAP hand back raw markup where a literal
+        # "&" inside an href is escaped as "&amp;"); without this, every query
+        # param after the first gets glued together with a literal "amp;" and
+        # the link comes out malformed.
+        decoded_html = html_lib.unescape(body_html or "")
+        links = re.findall(r"https?://[^\s\"'<>]*netflix\.com[^\s\"'<>]*", decoded_html + " " + text)
         priority = _LINK_PRIORITY.get(category_key, _LINK_PRIORITY_FALLBACK)
         best = None
         best_rank = len(priority)
@@ -165,7 +207,8 @@ def parse_netflix_email(subject: str, body_text: str, body_html: str, extract_ty
                     best_rank = rank
                     break
         link = best or (links[0] if links else None)
-    return {"code": code, "link": link, "snippet": text[:400]}
+    country = _detect_country(body_html, text) if extract_type == "link" else None
+    return {"code": code, "link": link, "snippet": text[:400], "country": country}
 
 
 def _match_messages(messages, cfg):
@@ -231,6 +274,7 @@ async def _fetch_via_graph(mailbox: dict, cfg: dict, category_key: str) -> dict:
             "code": parsed["code"],
             "link": parsed["link"],
             "snippet": parsed["snippet"],
+            "country": parsed["country"],
             "subject": msg.get("subject", ""),
             "from": frm,
             "received": msg.get("receivedDateTime", ""),
@@ -292,6 +336,7 @@ def _fetch_via_gmail_imap(email_norm: str, cfg: dict, category_key: str) -> dict
                         "code": parsed["code"],
                         "link": parsed["link"],
                         "snippet": parsed["snippet"],
+                        "country": parsed["country"],
                         "subject": subject,
                         "from": _decode(m.get("From")),
                         "received": m.get("Date", ""),
