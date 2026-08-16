@@ -10,25 +10,20 @@ from crypto_utils import decrypt_token
 from msgraph import acquire_from_refresh, graph_get, REAUTH_ERRORS
 
 # Ordered category definitions. Reused across both providers.
-# Ordered category definitions. Reused across both providers.
 # Keyword lists are multilingual (EN/PT/ES/FR/DE/IT) since Netflix localizes
-# subject lines based on the recipient's account region/language.
+# subject lines based on the recipient's account region/language. Keywords are
+# grouped per language (rather than one flat list) so we can also detect which
+# locale an email was sent in and surface a country flag for it.
 CATEGORIES = {
     "login_code": {
         "label": "Login Code",
         "description": "Netflix temporary access / household travel code",
         "keywords": [
-            # English
             "temporary access code", "household travel", "travel", "get code", "access code",
-            # Portuguese
             "código de acesso", "codigo de acesso", "acesso temporário", "acesso temporario",
-            # Spanish
             "código de acceso", "codigo de acceso", "acceso temporal",
-            # French
             "code d'accès", "code d'acces", "accès temporaire",
-            # German
             "zugangscode", "vorübergehender zugangscode",
-            # Italian
             "codice di accesso", "accesso temporaneo",
         ],
         "extract": "code",
@@ -37,17 +32,11 @@ CATEGORIES = {
         "label": "Verification Code",
         "description": "Account verification / confirm email code",
         "keywords": [
-            # English
             "verification code", "verify your", "confirm your", "your code", "verify email",
-            # Portuguese
             "código de verificação", "codigo de verificacao", "verifique sua",
-            # Spanish
             "código de verificación", "codigo de verificacion", "verifica tu",
-            # French
             "code de vérification", "code de verification", "vérifiez votre",
-            # German
             "bestätigungscode", "bestatigungscode", "bestätige deine",
-            # Italian
             "codice di verifica", "verifica il tuo",
         ],
         "extract": "code",
@@ -56,17 +45,11 @@ CATEGORIES = {
         "label": "Household",
         "description": "Netflix Household update / verification link",
         "keywords": [
-            # English
             "household", "update your household", "confirm update", "this was me",
-            # Portuguese
             "residência", "residencia", "atualizar sua residência", "atualizar sua residencia",
-            # Spanish
             "hogar", "actualizar tu hogar",
-            # French
             "foyer", "mettre à jour votre foyer", "mettre a jour votre foyer",
-            # German
             "haushalt", "haushalt aktualisieren",
-            # Italian
             "nucleo familiare", "aggiorna il tuo nucleo",
         ],
         "extract": "link",
@@ -75,17 +58,11 @@ CATEGORIES = {
         "label": "Password Reset",
         "description": "Reset your Netflix password link",
         "keywords": [
-            # English
             "reset your password", "password", "forgot", "password reset request",
-            # Portuguese
             "redefinir sua senha", "senha", "esqueceu",
-            # Spanish
             "restablecer tu contraseña", "restablecer tu contrasena", "contraseña", "contrasena",
-            # French
             "réinitialiser votre mot de passe", "reinitialiser votre mot de passe", "mot de passe",
-            # German
             "passwort zurücksetzen", "passwort zurucksetzen", "passwort",
-            # Italian
             "reimposta la password", "password",
         ],
         "extract": "link",
@@ -94,17 +71,11 @@ CATEGORIES = {
         "label": "TV Login",
         "description": "Device / TV sign-in code",
         "keywords": [
-            # English
             "sign-in code", "sign in code", "new device", "signing in", "tv", "device",
-            # Portuguese
             "código de entrada", "codigo de entrada", "novo dispositivo",
-            # Spanish
             "código de inicio de sesión", "codigo de inicio de sesion", "nuevo dispositivo",
-            # French
             "code de connexion", "nouvel appareil",
-            # German
             "anmeldecode", "neues gerät", "neues gerat",
-            # Italian
             "codice di accesso tv", "nuovo dispositivo",
         ],
         "extract": "code",
@@ -207,7 +178,7 @@ def parse_netflix_email(subject: str, body_text: str, body_html: str, extract_ty
                     best_rank = rank
                     break
         link = best or (links[0] if links else None)
-    country = _detect_country(body_html, text) if extract_type == "link" else None
+    country = _detect_country(body_html, text)
     return {"code": code, "link": link, "snippet": text[:400], "country": country}
 
 
