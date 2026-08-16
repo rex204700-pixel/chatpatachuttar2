@@ -129,21 +129,42 @@ def _html_to_text(html: str) -> str:
     return text.strip()
 
 
-def parse_netflix_email(subject: str, body_text: str, body_html: str) -> dict:
+# Link-URL keyword priority, per category — the category being searched must
+# rank its own kind of link first, otherwise an unrelated footer link (e.g. a
+# generic "manage/update account" link) can outrank the actual actionable link,
+# since Netflix emails often contain several netflix.com links in one message.
+_LINK_PRIORITY = {
+    "password_reset": ["password", "reset", "senha", "contrase", "mot-de-passe", "mot_de_passe", "passwort"],
+    "household": ["household", "hogar", "foyer", "haushalt", "residen", "nucleo", "confirm", "update"],
+}
+_LINK_PRIORITY_FALLBACK = ["password", "household", "verify", "confirm", "travel", "getcode", "get-code", "update", "account/"]
+
+
+def parse_netflix_email(subject: str, body_text: str, body_html: str, extract_type: str = "code", category_key: str = None) -> dict:
     text = body_text or _html_to_text(body_html)
     code = None
-    m = re.search(r"(?<![\d-])(\d{4,8})(?![\d-])", text)
-    if m:
-        code = m.group(1)
-    links = re.findall(r"https?://[^\s\"'<>]*netflix\.com[^\s\"'<>]*", (body_html or "") + " " + text)
     link = None
-    priority = ["travel", "update", "verify", "password", "confirm", "getcode", "get-code", "account/"]
-    for l in links:
-        if any(p in l.lower() for p in priority):
-            link = l
-            break
-    if not link and links:
-        link = links[0]
+    # Only pull a code for code-type categories (login/verification/tv). Link-only
+    # categories (password_reset, household) must never surface a spurious digit
+    # match (support phone numbers, footer reference numbers, etc.) as if it were
+    # an OTP — that's misleading, so we simply don't look for one.
+    if extract_type == "code":
+        m = re.search(r"(?<![\d-])(\d{4,8})(?![\d-])", text)
+        if m:
+            code = m.group(1)
+    if extract_type == "link":
+        links = re.findall(r"https?://[^\s\"'<>]*netflix\.com[^\s\"'<>]*", (body_html or "") + " " + text)
+        priority = _LINK_PRIORITY.get(category_key, _LINK_PRIORITY_FALLBACK)
+        best = None
+        best_rank = len(priority)
+        for l in links:
+            low = l.lower()
+            for rank, p in enumerate(priority):
+                if p in low and rank < best_rank:
+                    best = l
+                    best_rank = rank
+                    break
+        link = best or (links[0] if links else None)
     return {"code": code, "link": link, "snippet": text[:400]}
 
 
@@ -163,7 +184,7 @@ def _match_messages(messages, cfg):
     return matched
 
 
-async def _fetch_via_graph(mailbox: dict, cfg: dict) -> dict:
+async def _fetch_via_graph(mailbox: dict, cfg: dict, category_key: str) -> dict:
     try:
         refresh = decrypt_token(mailbox["ms_refresh_token_enc"])
     except Exception:
@@ -201,7 +222,7 @@ async def _fetch_via_graph(mailbox: dict, cfg: dict) -> dict:
 
     msg = matched[0]
     body = msg.get("body") or {}
-    parsed = parse_netflix_email(msg.get("subject", ""), None, body.get("content", ""))
+    parsed = parse_netflix_email(msg.get("subject", ""), None, body.get("content", ""), cfg["extract"], category_key)
     frm = ((msg.get("from") or {}).get("emailAddress") or {}).get("address", "")
     return {
         "status": "found",
@@ -231,7 +252,7 @@ def _decode(s):
     return out
 
 
-def _fetch_via_gmail_imap(email_norm: str, cfg: dict) -> dict:
+def _fetch_via_gmail_imap(email_norm: str, cfg: dict, category_key: str) -> dict:
     user = os.environ.get("GMAIL_IMAP_USER")
     pw = os.environ.get("GMAIL_IMAP_PASSWORD")
     if not (user and pw):
@@ -263,7 +284,7 @@ def _fetch_via_gmail_imap(email_norm: str, cfg: dict) -> dict:
                 body_text = m.get_payload(decode=True).decode(errors="ignore")
             haystack = (subject + " " + body_text + " " + body_html).lower()
             if any(k in haystack for k in kws):
-                parsed = parse_netflix_email(subject, body_text, body_html)
+                parsed = parse_netflix_email(subject, body_text, body_html, cfg["extract"], category_key)
                 M.logout()
                 return {
                     "status": "found",
@@ -288,5 +309,5 @@ def _fetch_via_gmail_imap(email_norm: str, cfg: dict) -> dict:
 async def fetch_netflix_code(mailbox: dict, email_norm: str, category_key: str, provider: str) -> dict:
     cfg = CATEGORIES[category_key]
     if provider == "outlook_graph":
-        return await _fetch_via_graph(mailbox, cfg)
-    return _fetch_via_gmail_imap(email_norm, cfg)
+        return await _fetch_via_graph(mailbox, cfg, category_key)
+    return _fetch_via_gmail_imap(email_norm, cfg, category_key)
