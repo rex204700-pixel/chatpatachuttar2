@@ -158,7 +158,19 @@ export default function CodeSearchTab() {
 
           {result.link && (
             <div className="mb-5">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">Action link</div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="text-xs text-slate-500 uppercase tracking-wide">Action link</div>
+                {result.country && (
+                  <span
+                    data-testid="parsed-country-badge"
+                    className="inline-flex items-center gap-1.5 text-xs text-slate-300 bg-white/5 border border-white/10 rounded-full px-2 py-0.5"
+                    title={result.country.code ? `Region: ${result.country.code}` : "Region detected"}
+                  >
+                    {result.country.flag && <span className="text-sm leading-none">{result.country.flag}</span>}
+                    {result.country.code && <span className="font-mono-code">{result.country.code}</span>}
+                  </span>
+                )}
+              </div>
               <a
                 data-testid="parsed-link-display"
                 href={result.link}
@@ -167,7 +179,7 @@ export default function CodeSearchTab() {
                 className="inline-flex items-center gap-2 text-sky-400 hover:text-sky-300 text-sm break-all bg-sky-500/5 border border-sky-500/20 rounded-lg px-4 py-3"
               >
                 <ExternalLink className="h-4 w-4 shrink-0" />
-                {result.link.length > 70 ? result.link.slice(0, 70) + "…" : result.link}
+                {result.link}
               </a>
             </div>
           )}
