@@ -4,14 +4,15 @@ import { useAuth } from "@/context/AuthContext";
 
 const TABS = [
   { key: "mailboxes", label: "Mailboxes", icon: Inbox, testid: "nav-mailboxes-tab", adminOnly: true },
-  { key: "assignments", label: "Assignments", icon: ListChecks, testid: "nav-assignments-tab", adminOnly: true },
+  { key: "assignments", label: "Assignments", icon: ListChecks, testid: "nav-assignments-tab", staffOnly: true },
   { key: "search", label: "Code Search", icon: Search, testid: "nav-code-search-tab", adminOnly: false },
 ];
 
 export default function Navbar({ active, onChange, msConfigured }) {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
-  const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);
+  const isStaff = isAdmin || user?.role === "sub_admin";
+  const visibleTabs = TABS.filter((t) => (!t.adminOnly || isAdmin) && (!t.staffOnly || isStaff));
 
   return (
     <header data-testid="nav-header" className="sticky top-0 z-40">
