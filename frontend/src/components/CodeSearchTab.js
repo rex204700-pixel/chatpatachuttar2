@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Search, Loader2, Copy, Check, ExternalLink, KeyRound,
-  MailX, PlugZap, Clock, AlertTriangle,
+  MailX, PlugZap, Clock, AlertTriangle, ShieldCheck, Lock, Tv, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,16 @@ const REASON_UI = {
   not_configured: { icon: AlertTriangle, color: "text-amber-400", title: "Gmail IMAP not configured", desc: "Set GMAIL_IMAP_USER and GMAIL_IMAP_PASSWORD to use the Gmail path." },
   throttled: { icon: Clock, color: "text-amber-400", title: "Microsoft throttled the request", desc: "Graph returned 429. Please retry in a few seconds." },
   error: { icon: AlertTriangle, color: "text-rose-400", title: "Fetch error", desc: "Something went wrong while reading the mailbox." },
+};
+
+// One icon per category so the dropdown reads at a glance instead of as a
+// wall of plain text.
+const CATEGORY_ICONS = {
+  login_code: KeyRound,
+  verification_code: ShieldCheck,
+  household: Users,
+  password_reset: Lock,
+  tv_login: Tv,
 };
 
 export default function CodeSearchTab() {
@@ -101,14 +111,32 @@ export default function CodeSearchTab() {
             <label className="text-xs text-slate-500 uppercase tracking-wide">Category</label>
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger data-testid="category-select" className="bg-black/40 border-white/10 text-slate-100">
-                <SelectValue placeholder="Select category…" />
+                <SelectValue placeholder="Select category…">
+                  {(() => {
+                    const cat = categories.find((c) => c.key === category);
+                    if (!cat) return null;
+                    const Icon = CATEGORY_ICONS[cat.key] || KeyRound;
+                    return (
+                      <span className="flex items-center gap-2">
+                        <Icon className="h-4 w-4 text-[#E50914]" />
+                        {cat.label}
+                      </span>
+                    );
+                  })()}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.key} value={c.key}>
-                    {c.label}
-                  </SelectItem>
-                ))}
+                {categories.map((c) => {
+                  const Icon = CATEGORY_ICONS[c.key] || KeyRound;
+                  return (
+                    <SelectItem key={c.key} value={c.key}>
+                      <span className="flex items-center gap-2">
+                        <Icon className="h-4 w-4 text-[#E50914]" />
+                        {c.label}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -135,7 +163,7 @@ export default function CodeSearchTab() {
                 title={result.country.code ? `Region: ${result.country.code}` : "Region detected"}
               >
                 {result.country.flag && <span className="text-sm leading-none">{result.country.flag}</span>}
-                {result.country.code && <span className="font-mono-code">{result.country.code}</span>}
+                <span>{result.country.country || result.country.code || "Region detected"}</span>
               </span>
             )}
             <span className="ml-auto text-xs text-slate-500 font-normal">
