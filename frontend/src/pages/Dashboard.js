@@ -18,7 +18,8 @@ const ERROR_MESSAGES = {
 export default function Dashboard() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [active, setActive] = useState(isAdmin ? "mailboxes" : "search");
+  const isStaff = isAdmin || user?.role === "sub_admin";
+  const [active, setActive] = useState(isAdmin ? "mailboxes" : isStaff ? "assignments" : "search");
   const [status, setStatus] = useState({ microsoft_configured: false, gmail_configured: false });
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
