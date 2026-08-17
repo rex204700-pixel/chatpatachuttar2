@@ -112,11 +112,44 @@ _LINK_PRIORITY_FALLBACK = ["password", "household", "verify", "confirm", "travel
 
 _FLAG_EMOJI_RE = re.compile("[\U0001F1E6-\U0001F1FF]{2}")
 _HTML_LANG_RE = re.compile(r'<html[^>]*\blang=["\']([a-zA-Z]{2})(?:[-_]([a-zA-Z]{2}))?["\']', re.IGNORECASE)
+# Netflix stamps its own internal locale tag into every transactional email's
+# footer, e.g. "SRC: 653956AC_..._en_DE_EVO" -> language "en", region "DE".
+# This is Netflix's own ground-truth region for that specific email, so it's
+# checked before any guessing — far more reliable than inferring from wording.
+_SRC_LOCALE_RE = re.compile(r"_[a-z]{2}_([A-Z]{2})_[A-Z]{2,6}(?:[\s\"'<]|$)")
 
 # Fallback: infer a country from the language when no explicit region subtag
 # (e.g. "pt" -> Brazil is by far Netflix's largest pt-speaking market) is present.
 _LANG_TO_COUNTRY = {
     "pt": "BR", "es": "ES", "en": "US", "fr": "FR", "de": "DE", "it": "IT",
+}
+
+# Distinctive phrases/words used to GUESS the email's language when Netflix's
+# markup gives us no explicit signal (no SRC tag, no <html lang>, no flag
+# emoji) — kept short and high-precision rather than exhaustive.
+_LANG_MARKERS = {
+    "pt": ["código", "senha", "você", "não foi você", "informe este código", "sua conta netflix"],
+    "es": ["código de acceso", "contraseña", "restablecer", "tu cuenta netflix", "ingresa este código"],
+    "fr": ["mot de passe", "réinitialiser", "votre compte netflix", "code d'accès"],
+    "de": ["passwort", "zurücksetzen", "ihr netflix-konto", "zugangscode"],
+    "it": ["reimposta la password", "il tuo account netflix", "codice di accesso"],
+    "en": ["password reset", "verification code", "your netflix account", "sign-in code", "temporary access code"],
+}
+
+# ISO 3166-1 country names for the markets Netflix actually operates in — used
+# so results show a full country name ("Germany"), not just a bare code ("DE").
+_COUNTRY_NAMES = {
+    "US": "United States", "GB": "United Kingdom", "CA": "Canada", "AU": "Australia",
+    "IN": "India", "BR": "Brazil", "MX": "Mexico", "DE": "Germany", "FR": "France",
+    "IT": "Italy", "ES": "Spain", "PT": "Portugal", "NL": "Netherlands", "BE": "Belgium",
+    "SE": "Sweden", "NO": "Norway", "DK": "Denmark", "FI": "Finland", "PL": "Poland",
+    "TR": "Turkey", "JP": "Japan", "KR": "South Korea", "PH": "Philippines", "ID": "Indonesia",
+    "TH": "Thailand", "VN": "Vietnam", "SG": "Singapore", "MY": "Malaysia", "AE": "United Arab Emirates",
+    "SA": "Saudi Arabia", "ZA": "South Africa", "NG": "Nigeria", "EG": "Egypt", "AR": "Argentina",
+    "CL": "Chile", "CO": "Colombia", "PE": "Peru", "IE": "Ireland", "CH": "Switzerland",
+    "AT": "Austria", "RU": "Russia", "UA": "Ukraine", "CZ": "Czech Republic", "GR": "Greece",
+    "RO": "Romania", "HU": "Hungary", "IL": "Israel", "NZ": "New Zealand", "PK": "Pakistan",
+    "BD": "Bangladesh", "HK": "Hong Kong", "TW": "Taiwan", "CN": "China",
 }
 
 
@@ -127,24 +160,42 @@ def _country_flag_from_code(cc: str):
     return "".join(chr(0x1F1E6 + (ord(c) - ord("A"))) for c in cc)
 
 
-def _detect_country(raw_html: str, text: str):
-    """Best-effort region detection for the footer of a Netflix email, used to
-    show a country flag alongside password-reset / household results. Looks for
-    a literal flag emoji Netflix already embeds, then falls back to the html
-    lang attribute Netflix sets per-region."""
-    for haystack in (raw_html, text):
+def _country_result(code: str, flag: str = None):
+    return {"flag": flag or _country_flag_from_code(code), "code": code, "country": _COUNTRY_NAMES.get(code, code)}
+
+
+def _detect_country(subject: str, raw_html: str, text: str):
+    """Best-effort region detection for a Netflix email, used to show a country
+    flag + name alongside every fetched result. Priority: Netflix's own SRC
+    locale tag (ground truth for that exact email) > an embedded flag emoji >
+    an explicit <html lang> attribute > guessing the language from distinctive
+    wording. Most real emails only ever reach the SRC tag or the guess — Graph
+    body content is just the message fragment, not a full <html> document."""
+    for haystack in (text, raw_html, subject):
+        if not haystack:
+            continue
+        m = _SRC_LOCALE_RE.search(haystack)
+        if m:
+            return _country_result(m.group(1).upper())
+    for haystack in (raw_html, text, subject):
         if not haystack:
             continue
         m = _FLAG_EMOJI_RE.search(haystack)
         if m:
-            return {"flag": m.group(0), "code": None}
+            return {"flag": m.group(0), "code": None, "country": None}
     if raw_html:
         m = _HTML_LANG_RE.search(raw_html)
         if m:
             lang = m.group(1).lower()
             region = (m.group(2) or _LANG_TO_COUNTRY.get(lang) or "").upper()
             if region:
-                return {"flag": _country_flag_from_code(region), "code": region}
+                return _country_result(region)
+    haystack = f"{subject or ''} {text or ''}".lower()
+    for lang, markers in _LANG_MARKERS.items():
+        if any(marker in haystack for marker in markers):
+            region = _LANG_TO_COUNTRY.get(lang)
+            if region:
+                return _country_result(region)
     return None
 
 
@@ -178,7 +229,7 @@ def parse_netflix_email(subject: str, body_text: str, body_html: str, extract_ty
                     best_rank = rank
                     break
         link = best or (links[0] if links else None)
-    country = _detect_country(body_html, text)
+    country = _detect_country(subject, body_html, text)
     return {"code": code, "link": link, "snippet": text[:400], "country": country}
 
 
