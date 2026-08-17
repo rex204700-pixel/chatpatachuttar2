@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Loader2, ListChecks } from "lucide-react";
+import { Plus, Trash2, Loader2, ListChecks, ShieldCheck, Users2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import api, { formatApiError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 function ProviderBadge({ provider }) {
   if (provider === "outlook_graph") {
@@ -23,7 +24,102 @@ function ProviderBadge({ provider }) {
   );
 }
 
+function TeamPanel() {
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/users/all");
+      setMembers(data);
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const setRole = async (id, role) => {
+    try {
+      await api.patch(`/users/${id}/role`, { role });
+      toast.success(role === "sub_admin" ? "Promoted to sub-admin" : "Set back to member");
+      await load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="h24-card flex items-center justify-center py-10 text-slate-500">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
+  if (members.length === 0) return null;
+
+  return (
+    <div className="h24-card overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-white/10 text-slate-300">
+        <div className="h-6 w-6 rounded-md bg-white/10 flex items-center justify-center">
+          <Users2 className="h-3.5 w-3.5" />
+        </div>
+        <span className="eyebrow">Team &amp; roles</span>
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {members.map((m) => (
+            <tr key={m.id} className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.025] transition-colors">
+              <td className="px-5 py-3">
+                <div className="text-slate-200 font-medium">{m.name || m.email}</div>
+                <div className="text-xs text-slate-500">{m.email}</div>
+              </td>
+              <td className="px-5 py-3">
+                {m.role === "sub_admin" ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Sub-admin
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-500">Member</span>
+                )}
+              </td>
+              <td className="px-5 py-3 text-right">
+                {m.role === "sub_admin" ? (
+                  <Button
+                    onClick={() => setRole(m.id, "member")}
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-400 hover:text-white hover:bg-white/5"
+                  >
+                    Revoke sub-admin
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => setRole(m.id, "sub_admin")}
+                    variant="outline"
+                    size="sm"
+                    className="border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                  >
+                    Make sub-admin
+                  </Button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function AssignmentsTab({ onChanged }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -121,59 +217,61 @@ export default function AssignmentsTab({ onChanged }) {
         </div>
       </div>
 
-      <form onSubmit={add} className="h24-card p-5">
-        <div className="flex items-center gap-2 mb-4 text-slate-300">
-          <div className="h-6 w-6 rounded-md bg-[#E50914]/15 border border-[#E50914]/30 flex items-center justify-center">
-            <Plus className="h-3.5 w-3.5 text-[#E50914]" />
+      {isAdmin && (
+        <form onSubmit={add} className="h24-card p-5">
+          <div className="flex items-center gap-2 mb-4 text-slate-300">
+            <div className="h-6 w-6 rounded-md bg-[#E50914]/15 border border-[#E50914]/30 flex items-center justify-center">
+              <Plus className="h-3.5 w-3.5 text-[#E50914]" />
+            </div>
+            <span className="eyebrow">New assignment</span>
           </div>
-          <span className="eyebrow">New assignment</span>
-        </div>
-        <div className="flex flex-col md:flex-row gap-3 md:items-end">
-          <div className="flex-1 space-y-1.5">
-            <label className="text-xs text-slate-500 uppercase tracking-wide">Netflix email</label>
-            <Input
-              data-testid="assignment-email-input"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="user@outlook.com"
-              className="bg-black/40 border-white/10 text-slate-100 h-10 focus-visible:ring-[#E50914]/40 focus-visible:border-[#E50914]/50"
-            />
+          <div className="flex flex-col md:flex-row gap-3 md:items-end">
+            <div className="flex-1 space-y-1.5">
+              <label className="text-xs text-slate-500 uppercase tracking-wide">Netflix email</label>
+              <Input
+                data-testid="assignment-email-input"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="user@outlook.com"
+                className="bg-black/40 border-white/10 text-slate-100 h-10 focus-visible:ring-[#E50914]/40 focus-visible:border-[#E50914]/50"
+              />
+            </div>
+            <div className="w-full md:w-44 space-y-1.5">
+              <label className="text-xs text-slate-500 uppercase tracking-wide">Provider</label>
+              <Select value={provider} onValueChange={setProvider}>
+                <SelectTrigger data-testid="assignment-provider-select" className="bg-black/40 border-white/10 text-slate-100 h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="outlook_graph">Outlook (Graph)</SelectItem>
+                  <SelectItem value="gmail_imap">Gmail (IMAP)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-full md:w-40 space-y-1.5">
+              <label className="text-xs text-slate-500 uppercase tracking-wide">Label (opt)</label>
+              <Input
+                data-testid="assignment-label-input"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Family plan"
+                className="bg-black/40 border-white/10 text-slate-100 h-10 focus-visible:ring-[#E50914]/40 focus-visible:border-[#E50914]/50"
+              />
+            </div>
+            <Button
+              type="submit"
+              data-testid="add-assignment-button"
+              disabled={adding}
+              className="bg-[#E50914] hover:bg-[#c40810] text-white font-semibold h-10 shadow-[0_0_20px_-4px_rgba(229,9,20,0.6)] transition-shadow hover:shadow-[0_0_28px_-4px_rgba(229,9,20,0.8)]"
+            >
+              {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
+              Add
+            </Button>
           </div>
-          <div className="w-full md:w-44 space-y-1.5">
-            <label className="text-xs text-slate-500 uppercase tracking-wide">Provider</label>
-            <Select value={provider} onValueChange={setProvider}>
-              <SelectTrigger data-testid="assignment-provider-select" className="bg-black/40 border-white/10 text-slate-100 h-10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="outlook_graph">Outlook (Graph)</SelectItem>
-                <SelectItem value="gmail_imap">Gmail (IMAP)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="w-full md:w-40 space-y-1.5">
-            <label className="text-xs text-slate-500 uppercase tracking-wide">Label (opt)</label>
-            <Input
-              data-testid="assignment-label-input"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="Family plan"
-              className="bg-black/40 border-white/10 text-slate-100 h-10 focus-visible:ring-[#E50914]/40 focus-visible:border-[#E50914]/50"
-            />
-          </div>
-          <Button
-            type="submit"
-            data-testid="add-assignment-button"
-            disabled={adding}
-            className="bg-[#E50914] hover:bg-[#c40810] text-white font-semibold h-10 shadow-[0_0_20px_-4px_rgba(229,9,20,0.6)] transition-shadow hover:shadow-[0_0_28px_-4px_rgba(229,9,20,0.8)]"
-          >
-            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-            Add
-          </Button>
-        </div>
-      </form>
+        </form>
+      )}
 
       <div data-testid="email-assignments-table" className="h24-card overflow-hidden">
         {loading ? (
@@ -184,7 +282,11 @@ export default function AssignmentsTab({ onChanged }) {
           <div className="p-12 text-center">
             <ListChecks className="h-10 w-10 text-slate-700 mx-auto mb-3" />
             <p className="text-slate-300 font-medium">No assignments yet</p>
-            <p className="text-slate-600 text-sm mt-1">Add a Netflix recipient address above to start routing codes.</p>
+            <p className="text-slate-600 text-sm mt-1">
+              {isAdmin
+                ? "Add a Netflix recipient address above to start routing codes."
+                : "Nothing has been assigned to you yet — ask an admin to assign a mailbox."}
+            </p>
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -205,15 +307,19 @@ export default function AssignmentsTab({ onChanged }) {
                     {r.label && <div className="text-xs text-slate-500">{r.label}</div>}
                   </td>
                   <td className="px-5 py-3.5">
-                    <Select value={r.provider} onValueChange={(v) => changeProvider(r.id, v)}>
-                      <SelectTrigger className="h-8 w-40 bg-black/30 border-white/10 text-xs text-slate-200">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="outlook_graph">Outlook (Graph)</SelectItem>
-                        <SelectItem value="gmail_imap">Gmail (IMAP)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {isAdmin ? (
+                      <Select value={r.provider} onValueChange={(v) => changeProvider(r.id, v)}>
+                        <SelectTrigger className="h-8 w-40 bg-black/30 border-white/10 text-xs text-slate-200">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="outlook_graph">Outlook (Graph)</SelectItem>
+                          <SelectItem value="gmail_imap">Gmail (IMAP)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <ProviderBadge provider={r.provider} />
+                    )}
                   </td>
                   <td className="px-5 py-3.5">
                     <Select
@@ -227,10 +333,11 @@ export default function AssignmentsTab({ onChanged }) {
                         <SelectValue placeholder="Unassigned" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="unassigned">Unassigned (admin only)</SelectItem>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
                         {users.map((u) => (
                           <SelectItem key={u.id} value={u.id}>
                             {u.name || u.email}
+                            {u.role === "sub_admin" && <span className="text-emerald-400"> · Sub-admin</span>}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -256,15 +363,17 @@ export default function AssignmentsTab({ onChanged }) {
                     )}
                   </td>
                   <td className="px-5 py-3.5 text-right">
-                    <Button
-                      data-testid={`delete-assignment-${r.email_norm}`}
-                      onClick={() => remove(r.id)}
-                      variant="ghost"
-                      size="sm"
-                      className="text-slate-500 hover:text-rose-400 hover:bg-rose-500/10"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {isAdmin && (
+                      <Button
+                        data-testid={`delete-assignment-${r.email_norm}`}
+                        onClick={() => remove(r.id)}
+                        variant="ghost"
+                        size="sm"
+                        className="text-slate-500 hover:text-rose-400 hover:bg-rose-500/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -272,6 +381,8 @@ export default function AssignmentsTab({ onChanged }) {
           </table>
         )}
       </div>
+
+      {isAdmin && <TeamPanel />}
     </div>
   );
 }
