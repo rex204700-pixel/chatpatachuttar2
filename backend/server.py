@@ -21,6 +21,7 @@ from auth_utils import (
     verify_password,
     create_access_token,
     get_current_admin,
+    get_current_staff,
     get_current_user,
 )
 import msgraph
@@ -121,11 +122,39 @@ async def me(user=Depends(get_current_user)):
     return user
 
 
-# ---------- Users (admin only, for assigning emails) ----------
+# ---------- Users (staff, for assigning emails) ----------
 @api.get("/users")
-async def list_users(admin=Depends(get_current_admin)):
-    docs = await db.users.find({"role": "member"}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+async def list_users(staff=Depends(get_current_staff)):
+    # Include sub_admins here too, not just plain members — an admin needs to
+    # be able to assign a mailbox directly to a sub_admin (that's how it lands
+    # in the sub_admin's own view so they can fetch it and, in turn, hand it
+    # off to one of their members).
+    docs = await db.users.find({"role": {"$in": ["member", "sub_admin"]}}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
     return docs
+
+
+@api.get("/users/all")
+async def list_all_staff_users(admin=Depends(get_current_admin)):
+    """Admin-only: members + sub_admins, for the Team/role management panel."""
+    docs = await db.users.find({"role": {"$in": ["member", "sub_admin"]}}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+class RoleUpdate(BaseModel):
+    role: str
+
+
+@api.patch("/users/{user_id}/role")
+async def set_user_role(user_id: str, body: RoleUpdate, admin=Depends(get_current_admin)):
+    if body.role not in ("member", "sub_admin"):
+        raise HTTPException(status_code=400, detail="Role must be member or sub_admin")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("role") == "admin":
+        raise HTTPException(status_code=400, detail="Cannot change an admin's role here")
+    await db.users.update_one({"id": user_id}, {"$set": {"role": body.role}})
+    return {"ok": True}
 
 
 # ---------- Config status ----------
@@ -147,6 +176,13 @@ async def get_categories(user=Depends(get_current_user)):
 # ---------- Assignments ----------
 @api.get("/assignments")
 async def list_assignments(user=Depends(get_current_user)):
+    # Full admin sees every mailbox. Everyone else — including sub_admin —
+    # only sees mailboxes currently assigned to THEM specifically. A sub_admin
+    # gets mailboxes into this list the same way a member would: the admin
+    # assigns one to them via the "Assigned to" dropdown. From there the
+    # sub_admin can hand it off to one of their own members using the same
+    # dropdown (their staff permission on the assign endpoint), at which point
+    # it moves into that member's own filtered view instead of the sub_admin's.
     query = {} if user.get("role") == "admin" else {"assigned_user_id": user["id"]}
     docs = await db.email_assignments.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     mailboxes = await db.mailbox_accounts.find({}, {"_id": 0, "ms_refresh_token_enc": 0}).to_list(500)
@@ -196,7 +232,7 @@ async def update_assignment(assignment_id: str, body: AssignmentUpdate, admin=De
 
 
 @api.patch("/assignments/{assignment_id}/assign")
-async def assign_to_user(assignment_id: str, body: AssignReq, admin=Depends(get_current_admin)):
+async def assign_to_user(assignment_id: str, body: AssignReq, staff=Depends(get_current_staff)):
     if body.user_id:
         target = await db.users.find_one({"id": body.user_id})
         if not target:
@@ -319,6 +355,10 @@ async def search(body: SearchReq, user=Depends(get_current_user)):
     assignment = await db.email_assignments.find_one({"email_norm": email_norm})
     if not assignment:
         raise HTTPException(status_code=404, detail="No assignment for this email")
+    # Only full admin can fetch any mailbox. A sub_admin is otherwise scoped
+    # exactly like a member: they can only fetch from mailboxes assigned to
+    # THEM — matching the /assignments view above, so what a sub_admin can see
+    # in Code Search always matches what's in their own Assignments list.
     if user.get("role") != "admin" and assignment.get("assigned_user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="This email is not assigned to you")
 
