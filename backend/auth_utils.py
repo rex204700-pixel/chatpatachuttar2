@@ -67,3 +67,25 @@ async def get_current_admin(request: Request) -> dict:
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=401, detail="Admin not found")
     return user
+
+
+async def get_current_staff(request: Request) -> dict:
+    """Admin OR sub_admin. Sub-admins can route (assign) existing mailboxes to
+    members, same as an admin, but can't add/remove mailboxes, change a
+    mailbox's provider, or connect Outlook accounts — those stay admin-only."""
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, os.environ["JWT_SECRET"], algorithms=[JWT_ALG])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
+    if not user or user.get("role") not in ("admin", "sub_admin"):
+        raise HTTPException(status_code=401, detail="Not authorized")
+    return user
