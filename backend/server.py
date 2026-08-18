@@ -30,6 +30,7 @@ from services.email_fetcher import (
     categories_list,
     fetch_netflix_code,
 )
+from services import telegram_bot
 from crypto_utils import encrypt_token
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -347,10 +348,11 @@ async def disconnect_mailbox(email_norm: str, admin=Depends(get_current_admin)):
 
 
 # ---------- Search ----------
-@api.post("/search")
-async def search(body: SearchReq, user=Depends(get_current_user)):
-    email_norm = normalize_email(body.email_norm)
-    if body.category not in CATEGORIES:
+async def perform_search(user: dict, email_norm: str, category: str) -> dict:
+    """Core fetch-and-authorize logic, shared by the HTTP /search route and the
+    Telegram bot — so both enforce the exact same assignment ownership rule and
+    never drift apart. Returns the same shape the /search route sends back."""
+    if category not in CATEGORIES:
         raise HTTPException(status_code=400, detail="Unknown category")
     assignment = await db.email_assignments.find_one({"email_norm": email_norm})
     if not assignment:
@@ -368,9 +370,9 @@ async def search(body: SearchReq, user=Depends(get_current_user)):
     if provider == "outlook_graph":
         if not mailbox or mailbox.get("status") != "connected":
             return {"found": False, "reason": "not_connected", "provider": provider}
-        result = await fetch_netflix_code(mailbox, email_norm, body.category, provider)
+        result = await fetch_netflix_code(mailbox, email_norm, category, provider)
     else:
-        result = await fetch_netflix_code(mailbox or {}, email_norm, body.category, provider)
+        result = await fetch_netflix_code(mailbox or {}, email_norm, category, provider)
 
     status = result.get("status")
 
@@ -395,7 +397,33 @@ async def search(body: SearchReq, user=Depends(get_current_user)):
     return {"found": False, "reason": status, "provider": provider}
 
 
+@api.post("/search")
+async def search(body: SearchReq, user=Depends(get_current_user)):
+    email_norm = normalize_email(body.email_norm)
+    return await perform_search(user, email_norm, body.category)
+
+
 app.include_router(api)
+
+
+# ---------- Telegram bot webhook ----------
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request):
+    # Telegram lets us set a secret_token on setWebhook; it sends it back on
+    # every request in this header. If we've configured one, reject anything
+    # that doesn't match instead of trusting an unauthenticated POST body.
+    expected_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+    if expected_secret:
+        got = request.headers.get("x-telegram-bot-api-secret-token")
+        if got != expected_secret:
+            raise HTTPException(status_code=401, detail="Invalid webhook secret")
+    body = await request.json()
+    try:
+        await telegram_bot.handle_update(body)
+    except Exception:
+        logger.exception("Error handling Telegram update")
+    # Telegram only cares about the 200 — it retries on anything else.
+    return {"ok": True}
 
 app.add_middleware(
     CORSMiddleware,
