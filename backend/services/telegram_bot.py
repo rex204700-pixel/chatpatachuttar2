@@ -101,7 +101,7 @@ async def _email_keyboard(user: dict):
     assignments = await _assigned_emails_for(user)
     if not assignments:
         return None, assignments
-    rows = [[{"text": a["email_norm"], "callback_data": f"email:{a['id']}"}] for a in assignments]
+    rows = [[{"text": f"📧 {a['email_norm']}", "callback_data": f"email:{a['id']}"}] for a in assignments]
     return rows, assignments
 
 
