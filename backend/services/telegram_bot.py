@@ -84,10 +84,23 @@ async def _assigned_emails_for(user: dict):
     return await db.email_assignments.find(query, {"_id": 0}).sort("email_norm", 1).to_list(200)
 
 
+# Icons shown only in the Telegram UI — kept separate from the shared
+# category labels (email_fetcher.CATEGORIES) so the website isn't affected.
+CATEGORY_ICONS = {
+    "login_code": "🔑",
+    "verification_code": "✅",
+    "household": "🏠",
+    "password_reset": "🔒",
+    "tv_login": "📺",
+}
+
+
 def _category_keyboard(assignment_id: str):
     rows, row = [], []
     for c in categories_list():
-        row.append({"text": c["label"], "callback_data": f"cat:{assignment_id}:{c['key']}"})
+        icon = CATEGORY_ICONS.get(c["key"], "")
+        text = f"{icon} {c['label']}" if icon else c["label"]
+        row.append({"text": text, "callback_data": f"cat:{assignment_id}:{c['key']}"})
         if len(row) == 2:
             rows.append(row)
             row = []
